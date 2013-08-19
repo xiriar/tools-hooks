@@ -122,6 +122,9 @@ prefix="pre-commit-uncrustify"
 suffix="$(date +%s)"
 patch="/tmp/$prefix-$suffix.patch"
 
+# Remove old temporary files (always, even if CLEAN_OLD_PATCHES not set)
+rm -f /tmp/$prefix-stage*
+
 # Remove any older uncrustify patches
 [ -n "$CLEAN_OLD_PATCHES" ] && $CLEAN_OLD_PATCHES && rm -f /tmp/$prefix*.patch
 
@@ -148,6 +151,13 @@ do
 
     printf "Checking file: $filename\n"
 
+    # Save the file which is in the staging area
+    #
+    # This is to check the currently staged status
+    # (might it be a partiall commit).
+    stage="/tmp/$prefix-stage-$suffix-${filename//[\/\\]/-}"
+    git show ":0:$filename" >"$stage"
+
     # Process the source file, create a patch with diff and append it
     # to the complete patch
     #
@@ -156,10 +166,13 @@ do
     #    +++ - timestamp
     # to both lines working on the same file and having a a/ and b/ prefix.
     # Else it could not be applied with 'git apply'.
-    "$UNCRUSTIFY" -c "$CONFIG" -l "$SOURCE_LANGUAGE" -f "$filename" -q -L 2 | \
-        diff -u "$filename" - | \
-        sed -e "1s|--- |--- a/|" -e "2s|+++ -|+++ b/$filename|" \
+    "$UNCRUSTIFY" -c "$CONFIG" -l "$SOURCE_LANGUAGE" -f "$stage" -q -L 2 | \
+        diff -u "$stage" - | \
+        sed -e "1s|--- $stage|--- a/$filename|" -e "2s|+++ -|+++ b/$filename|" \
         >> "$patch"
+
+    # Remove the temporary file
+    rm -f "$stage"
 done
 
 # If no patch has been generated all is ok, clean up the file stub and exit
