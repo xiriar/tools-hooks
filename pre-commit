@@ -46,6 +46,12 @@ set -e
 # CONFIGURE
 # ============================================================================ #
 
+# The user or company name
+#
+# Concatenated with " code style" for the informational messages.
+#COMPANY_NAME=Company
+COMPANY_NAME=Xiriar
+
 # Path to the Uncrustify binary
 #UNCRUSTIFY="/usr/bin/uncrustify"
 UNCRUSTIFY="uncrustify"
@@ -178,14 +184,14 @@ done
 # If no patch has been generated all is ok, clean up the file stub and exit
 if [ ! -s "$patch" ]
 then
-    printf "Files in this commit comply with the uncrustify rules.\n"
+    printf "Files in this commit comply with the $COMPANY_NAME code style guidelines.\n"
     rm -f "$patch"
     exit 0
 fi
 
 # A patch has been created, notify the user and exit
 printf "\nThe following differences were found between the code to commit "
-printf "and the uncrustify rules:\n\n"
+printf "and the $COMPANY_NAME code style guidelines:\n\n"
 
 cat "$patch"
 
