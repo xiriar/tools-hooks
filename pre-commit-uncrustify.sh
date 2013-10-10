@@ -92,10 +92,19 @@ FILE_TYPES=".c .h .cpp .hpp"
 # Source the utility script
 source "$(dirname "$0")/hook_utils.sh"
 
+printf "Starting the $COMPANY_NAME code style check - please wait ...\n"
+
 # Check the merge commits
-if [ -n "$SKIP_MERGE" ] && $SKIP_MERGE && [ -f ".git/MERGE_MSG" ]
+if [ -f ".git/MERGE_MSG" ]
 then
-    exit 0
+    printf "    > merge detected"
+    if [ -n "$SKIP_MERGE" ] && $SKIP_MERGE
+    then
+        printf "\n... check skipped.\n"
+        exit 0
+    else
+        printf "      (the check can take more time)\n"
+    fi
 fi
 
 # Needed for the initial commit
