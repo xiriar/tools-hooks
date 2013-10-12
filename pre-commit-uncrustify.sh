@@ -84,6 +84,11 @@ FILE_TYPES=".c .h .cpp .hpp"
 # Also aplies to cherry-picks.
 #SKIP_MERGE=true
 
+# Apply the patch to the index automatically
+#
+# Warning: This can be dangerous (the review of the changes is skipped).
+#AUTO_APPLY=true
+
 # Count of simultaneous parallel tasks
 #
 # Can improve performance for large commits (especially merge commits).
@@ -98,10 +103,19 @@ PARALLEL_PROC=4
 # Source the utility script
 source "$(dirname "$0")/hook_utils.sh"
 
+printf "Starting the $COMPANY_NAME code style check - please wait ...\n"
+
 # Check the merge commits
-if [ -n "$SKIP_MERGE" ] && $SKIP_MERGE && [ -f ".git/MERGE_MSG" ]
+if [ -f ".git/MERGE_MSG" ]
 then
-    exit 0
+    printf "    > merge detected"
+    if [ -n "$SKIP_MERGE" ] && $SKIP_MERGE
+    then
+        printf "\n... check skipped.\n"
+        exit 0
+    else
+        printf "      (the check can take more time)\n"
+    fi
 fi
 
 # Needed for the initial commit
@@ -242,12 +256,35 @@ then
     exit 0
 fi
 
-# A patch has been created, notify the user and exit
+# A patch has been created
 printf "\nThe following differences were found between the code to commit "
 printf "and the $COMPANY_NAME code style guidelines:\n\n"
 
 cat "$patch"
 
+# Check the auto-apply option
+if [ -n "$AUTO_APPLY" ] && $AUTO_APPLY
+then
+    # Try to apply the changes automatically
+    printf "\nAuto-apply enabled, trying to apply the patch ...\n"
+    if git apply --cached "$patch"
+    then
+        printf "... patch applied.\n"
+        # Try to apply the patch to the working dir too, to avoid conflicts
+        # (ignore any errors)
+        if ! git apply "$patch" >/dev/null 2>/dev/null
+        then
+            printf "(application to the working dir failed - working dir left unchanged)\n"
+        fi
+        rm -f "$patch"
+        printf "\nFiles in this commit patched to comply with the $COMPANY_NAME"
+        printf " code style guidelines.\n"
+        exit 0
+    fi
+    printf "Failed to apply the patch!\n"
+fi
+
+# The patch wasn't applied automatically - notify the user and abort the commit
 printf "\nYou can apply these changes with:\n  git apply $patch\n"
 printf "(needs to be called from the root directory of the repository)\n"
 printf "Aborting commit. Apply changes and commit again or skip the check with"
