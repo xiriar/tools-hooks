@@ -156,47 +156,61 @@ create_patch() {
     printf "Parallel processing in $PARALLEL_PROC threads\n"
 
     git diff-index --cached --diff-filter=ACMR --name-only $against -- | \
-        process_list
+    (
+        # Prepare file lists for the particular threads
+        local nproc=0
+        while read filename
+        do
+            # Ignore the file if we check the file type and the file
+            # does not match any of the extensions specified in $FILE_TYPES
+            if [ -n "$FILE_TYPES" ] && ! test_file_ext "$filename" "$FILE_TYPES"
+            then
+                continue
+            fi
 
+            # Skip directories
+            if [ -d "$filename" ]
+            then
+                printf "Skipping the directory: $filename\n"
+                continue
+            fi
+
+            # We want the trailing newline
+            files[$nproc]="${files[$nproc]}$filename
+"
+
+            nproc=$(($nproc+1))
+            [ "$nproc" -eq "$PARALLEL_PROC" ] && nproc=0
+
+        done
+
+        #printf "Listing done.\n"
+        #printf "%s---\n" "${files[@]}"
+
+        # Process the prepared lists
+        for (( i=0; i < $PARALLEL_PROC; i++ ))
+        do
+            #printf "Check list:\n${files[$i]}"
+            # Run the tasks in parallel background threads
+            process_list "${files[$i]}" "/tmp/$prefix-temp-$suffix-$i.tmp" &
+        done
+
+        # Wait for all tasks to complete
+        wait
+    )
 }
 
 
 # Process a file list
 process_list() {
+    local filelist=$1
+    local patchname=$2
+    #printf "Patch file: $patchname\n"
 
-    local nproc=0
-    while read filename
+    for filename in $filelist
     do
-        # Ignore the file if we check the file type and the file
-        # does not match any of the extensions specified in $FILE_TYPES
-        if [ -n "$FILE_TYPES" ] && ! test_file_ext "$filename" "$FILE_TYPES"
-        then
-            continue
-        fi
-
-        # Skip directories
-        if [ -d "$filename" ]
-        then
-            printf "Skipping the directory: $filename\n"
-            continue
-        fi
-
-        # Run the tasks in parallel background threads
-        process_file "$filename" "/tmp/$prefix-temp-$suffix-$nproc.tmp" &
-
-        nproc=$(($nproc+1))
-        if [ "$nproc" -eq "$PARALLEL_PROC" ]
-        then
-            wait
-            nproc=0
-        fi
+        process_file "$filename" "$patchname"
     done
-
-    # Wait for all tasks to complete
-    if [ "$nproc" -ge 0 ]
-    then
-        wait
-    fi
 }
 
 
@@ -205,7 +219,6 @@ process_file() {
     local filename=$1
     local patchname=$2
     printf "Checking file: $filename\n"
-    #printf "Patch file: $patchname\n"
 
     # Save the file which is in the staging area
     #
