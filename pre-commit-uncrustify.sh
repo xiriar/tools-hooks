@@ -101,7 +101,7 @@ PARALLEL_PROC=4
 # ============================================================================ #
 
 # Source the utility script
-source -- "$(dirname -- "$0")/hook_utils.sh"
+. "$(dirname -- "$0")/hook_utils.sh"
 
 printf "Starting the $COMPANY_NAME code style check - please wait ...\n"
 
@@ -158,6 +158,7 @@ create_patch() {
     git diff-index --cached --diff-filter=ACMR --name-only $against -- | \
     (
         # Prepare file lists for the particular threads
+        local files=""
         local nproc=0
         while read filename
         do
@@ -176,8 +177,8 @@ create_patch() {
             fi
 
             # We want the trailing newline
-            files[$nproc]="${files[$nproc]}$filename
-"
+            files=$(eval printf -- \""$"list_$nproc\")
+            eval list_$nproc="\"$(printf -- "%s\n%s" "$filename" "$files")\""
 
             nproc=$(($nproc+1))
             [ "$nproc" -eq "$PARALLEL_PROC" ] && nproc=0
@@ -188,11 +189,14 @@ create_patch() {
         #printf "%s---\n" "${files[@]}"
 
         # Process the prepared lists
-        for (( i=0; i < $PARALLEL_PROC; i++ ))
+        nproc=0
+        while [ $nproc -lt $PARALLEL_PROC ]
         do
-            #printf "Check list:\n${files[$i]}"
+            files=$(eval printf -- \""$"list_$nproc\")
+            #printf "Check list:\n$files\n"
             # Run the tasks in parallel background threads
-            process_list "${files[$i]}" "/tmp/$prefix-temp-$suffix-$i.tmp" &
+            process_list "$files" "/tmp/$prefix-temp-$suffix-$nproc.tmp" &
+            nproc=$(($nproc+1))
         done
 
         # Wait for all tasks to complete
@@ -203,11 +207,11 @@ create_patch() {
 
 # Process a file list
 process_list() {
-    local filelist=$1
-    local patchname=$2
+    local filelist="$1"
+    local patchname="$2"
     #printf "Patch file: $patchname\n"
 
-    for filename in $filelist
+    printf -- "$filelist\n" | while read filename
     do
         process_file "$filename" "$patchname"
     done
@@ -216,8 +220,8 @@ process_list() {
 
 # Process a single file
 process_file() {
-    local filename=$1
-    local patchname=$2
+    local filename="$1"
+    local patchname="$2"
     printf "Checking file: $filename\n"
 
     # Save the file which is in the staging area
@@ -250,7 +254,8 @@ create_patch
 
 
 # Concatenate all the partial patch lists
-for (( i=0; i < $PARALLEL_PROC; i++ ))
+i=0
+while [ $i -lt $PARALLEL_PROC ]
 do
     if [ -r "/tmp/$prefix-temp-$suffix-$i.tmp" ]
     then
@@ -258,6 +263,7 @@ do
         cat "/tmp/$prefix-temp-$suffix-$i.tmp" >> "$patch"
         rm -f "/tmp/$prefix-temp-$suffix-$i.tmp"
     fi
+    i=$(($i+1))
 done
 
 
