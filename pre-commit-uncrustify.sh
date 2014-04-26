@@ -95,7 +95,7 @@ FILE_TYPES=".c .h .cpp .hpp"
 # ============================================================================ #
 
 # Source the utility script
-source "$(dirname "$0")/hook_utils.sh"
+source -- "$(dirname -- "$0")/hook_utils.sh"
 
 printf "Starting the $COMPANY_NAME code style check - please wait ...\n"
 
@@ -179,7 +179,7 @@ do
     # to both lines working on the same file and having a a/ and b/ prefix.
     # Else it could not be applied with 'git apply'.
     "$UNCRUSTIFY" -c "$CONFIG" -l "$SOURCE_LANGUAGE" -f "$stage" -q -L 2 | \
-        diff -u "$stage" - | \
+        diff -u -- "$stage" - | \
         sed -e "1s|--- $stage|--- a/$filename|" -e "2s|+++ -|+++ b/$filename|" \
         >> "$patch"
 
