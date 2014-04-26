@@ -95,7 +95,7 @@ FILE_TYPES=".c .h .cpp .hpp"
 # ============================================================================ #
 
 # Source the utility script
-source -- "$(dirname -- "$0")/hook_utils.sh"
+. "$(dirname -- "$0")/hook_utils.sh"
 
 printf "Starting the $COMPANY_NAME code style check - please wait ...\n"
 
