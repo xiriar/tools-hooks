@@ -49,13 +49,13 @@ HOOKS="default uncrustify"
 # ============================================================================ #
 
 # Source the utility script
-source "$(dirname "$0")/hook_utils.sh"
+source -- "$(dirname -- "$0")/hook_utils.sh"
 
 # Absolute path to this script, e.g. /home/user/bin/foo.sh
 SCRIPT="$(canonicalize_filename "$0")"
 
 # Absolute path this script is in, thus /home/user/bin
-SCRIPTPATH="$(dirname "$SCRIPT")"
+SCRIPTPATH="$(dirname -- "$SCRIPT")"
 
 for hook in $HOOKS
 do
