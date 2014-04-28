@@ -144,7 +144,11 @@ rm -f /tmp/$prefix-stage*
 [ -f "$patch" ] && rm -f "$patch"
 
 # Create one patch containing all changes to the files
+#
+# Remove quotes around the filename by "sed", if inserted by the system
+# (done sometimes, if the filename contains special characters, like the quote itself).
 git diff-index --cached --diff-filter=ACMR --name-only $against -- | \
+    sed -e 's/^"\(.*\)"$/\1/' | \
     while read filename
 do
     # Ignore the file if we check the file type and the file
@@ -157,11 +161,11 @@ do
     # Skip directories
     if [ -d "$filename" ]
     then
-        printf "Skipping the directory: $filename\n"
+        printf "Skipping the directory: %s\n" "$filename"
         continue
     fi
 
-    printf "Checking file: $filename\n"
+    printf "Checking file: %s\n" "$filename"
 
     # Save the file which is in the staging area
     #
@@ -169,6 +173,29 @@ do
     # (might it be a partiall commit).
     stage="/tmp/$prefix-stage-$suffix-${filename//[\/\\]/-}"
     git show ":0:$filename" >"$stage"
+
+    # Escape special characters in the source filename:
+    # - '\': baskslash needs to be escaped
+    # - '*': used as matching string => '*' would mean expansion
+    #        (curiously, '?' must not be escaped)
+    # - '[': used as matching string => '[' would mean start of set
+    # - '|': used as sed split char instead of '/', so it needs to be escaped
+    #        in the filename
+    # printf %s is particularly important if the filename contains the % character
+    source_escaped=$(printf "%s" "$stage" | sed -e 's/[\*[|]/\\&/g')
+
+    # Escape special characters in the target filename:
+    # Phase 1 (characters escaped in the output diff):
+    #     - '\': baskslash needs to be escaped in the output diff
+    #     - '"': quote needs to be escaped in the output diff if present inside
+    #            of the filename, as it used to bracket the entire filename part
+    # Phase 2 (characters escaped in the match replacement):
+    #     - '\': baskslash needs to be escaped again for the sed itself
+    #            (i.e. double escaping after phase 1)
+    #     - '&': would expand to matched string
+    #     - '|': used as sed split char instead of '/'
+    # printf %s is particularly important if the filename contains the % character
+    target_escaped=$(printf "%s" "$filename" | sed -e 's/[\"]/\\&/g' -e 's/[\&|]/\\&/g')
 
     # Process the source file, create a patch with diff and append it
     # to the complete patch
@@ -180,7 +207,7 @@ do
     # Else it could not be applied with 'git apply'.
     "$UNCRUSTIFY" -c "$CONFIG" -l "$SOURCE_LANGUAGE" -f "$stage" -q -L 2 | \
         diff -u -- "$stage" - | \
-        sed -e "1s|--- $stage|--- \"a/$filename\"|" -e "2s|+++ -|+++ \"b/$filename\"|" \
+        sed -e "1s|--- $source_escaped|--- \"a/$target_escaped\"|" -e "2s|+++ -|+++ \"b/$target_escaped\"|" \
         >> "$patch"
 
     # Remove the temporary file
@@ -224,7 +251,7 @@ then
 fi
 
 # The patch wasn't applied automatically - notify the user and abort the commit
-printf "\nYou can apply these changes with:\n  git apply $patch\n"
+printf "\nYou can apply these changes with:\n  git apply %s\n" "$patch" 
 printf "(needs to be called from the root directory of the repository)\n"
 printf "Aborting commit. Apply changes and commit again or skip the check with"
 printf " --no-verify (not recommended).\n"
