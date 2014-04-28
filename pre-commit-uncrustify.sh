@@ -180,7 +180,7 @@ do
     # Else it could not be applied with 'git apply'.
     "$UNCRUSTIFY" -c "$CONFIG" -l "$SOURCE_LANGUAGE" -f "$stage" -q -L 2 | \
         diff -u -- "$stage" - | \
-        sed -e "1s|--- $stage|--- a/$filename|" -e "2s|+++ -|+++ b/$filename|" \
+        sed -e "1s|--- $stage|--- \"a/$filename\"|" -e "2s|+++ -|+++ \"b/$filename\"|" \
         >> "$patch"
 
     # Remove the temporary file
