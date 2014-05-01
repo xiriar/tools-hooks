@@ -41,38 +41,37 @@
 # Exit and fail on error immediately
 set -e
 
+# Source the utility script
+. "$(dirname -- "$0")/hook_utils.sh"
+
 
 # ============================================================================ #
 # CONFIGURE
+# ---------------------------------------------------------------------------- #
+# Do not modify this directly, use "git config [--global]" to configure.
 # ============================================================================ #
 
 # The user or company name
 #
 # Concatenated with " code style" for the informational messages.
-#COMPANY_NAME=Company
-COMPANY_NAME=Xiriar
+COMPANY_NAME="$(git_option "hooks.company" "Xiriar")"
 
 # Path to the Uncrustify binary
-#UNCRUSTIFY="/usr/bin/uncrustify"
-UNCRUSTIFY="uncrustify"
+UNCRUSTIFY="$(git_option "hooks.uncrustify.path" "$(which uncrustify)")"
 
 # Path to the Uncrustify configuration
-#CONFIG="$HOME/.config/uncrustify.cfg"
-CONFIG="$HOME/.config/uncrustify.cfg"
+CONFIG="$(git_option "hooks.uncrustify.config" "$(dirname -- "$(canonicalize_filename "$0")")/uncrustify.cfg")"
 
 # The source code language
 #
 # Available values: C, CPP, D, CS, JAVA, PAWN, VALA, OC, OC+.
-#SOURCE_LANGUAGE="CPP"
-SOURCE_LANGUAGE="CPP"
+SOURCE_LANGUAGE="$(git_option "hooks.uncrustify.language" "CPP")"
 
 # Remove any older patches from previous commits
-#CLEAN_OLD_PATCHES=true
-CLEAN_OLD_PATCHES=true
+CLEAN_OLD_PATCHES="$(git_option "hooks.uncrustify.cleanup" "true" "bool")"
 
 # File types to parse
-#FILE_TYPES=".c .h .cpp .hpp"
-FILE_TYPES=".c .h .cpp .hpp"
+FILE_TYPES="$(git_option "hooks.uncrustify.filetypes" ".c .h .cc .hh .cpp .hpp .cxx .hxx .inl .cu")"
 
 # Skip merge commits
 #
@@ -82,26 +81,22 @@ FILE_TYPES=".c .h .cpp .hpp"
 # - Applying code style patches on merges can sometimes cause conflicts when
 #   merging back and forth.
 # Also aplies to cherry-picks.
-#SKIP_MERGE=true
+SKIP_MERGE="$(git_option "hooks.uncrustify.skipmerge" "false" "bool")"
 
 # Apply the patch to the index automatically
 #
 # Warning: This can be dangerous (the review of the changes is skipped).
-#AUTO_APPLY=true
+AUTO_APPLY="$(git_option "hooks.uncrustify.autoapply" "false" "bool")"
 
 # Count of simultaneous parallel tasks
 #
 # Can improve performance for large commits (especially merge commits).
-#PARALLEL_PROC=4
-PARALLEL_PROC=4
+PARALLEL_PROC=$(git_option "hooks.uncrustify.parallel" "4" "int")
 
 
 # ============================================================================ #
 # EXECUTE
 # ============================================================================ #
-
-# Source the utility script
-. "$(dirname -- "$0")/hook_utils.sh"
 
 printf "Starting the $COMPANY_NAME code style check - please wait ...\n"
 
@@ -131,7 +126,18 @@ fi
 if [ ! -f "$CONFIG" ]
 then
     printf "Error: uncrustify config file not found.\n"
-    printf "Set the correct path in $(canonicalize_filename "$0").\n"
+    printf "Configure by:\n"
+    printf "  git config [--global] hooks.uncrustify.config <full_path>\n"
+    printf "(the path must be a full absolute path)\n"
+    exit 1
+fi
+
+if [ ! -x "$UNCRUSTIFY" ]
+then
+    printf "Error: The Uncrustify executable not found.\n"
+    printf "Configure by:\n"
+    printf "  git config [--global] hooks.uncrustify.path <full_path>\n"
+    printf "(the path must be a full absolute path)\n"
     exit 1
 fi
 
@@ -155,7 +161,12 @@ create_patch() {
 
     printf "Parallel processing in $PARALLEL_PROC threads\n"
 
+    # Remove quotes around the filename by "sed", if inserted by the system
+    #
+    # Done by the system sometimes, if the filename contains special characters,
+    # like the quote itself.
     git diff-index --cached --diff-filter=ACMR --name-only $against -- | \
+        sed -e 's/^"\(.*\)"$/\1/' | \
     (
         # Prepare file lists for the particular threads
         local files=""
@@ -172,7 +183,7 @@ create_patch() {
             # Skip directories
             if [ -d "$filename" ]
             then
-                printf "Skipping the directory: $filename\n"
+                printf "Skipping the directory: %s\n" "$filename"
                 continue
             fi
 
@@ -222,7 +233,7 @@ process_list() {
 process_file() {
     local filename="$1"
     local patchname="$2"
-    printf "Checking file: $filename\n"
+    printf "Checking file: %s\n" "$filename"
 
     # Save the file which is in the staging area
     #
@@ -230,6 +241,29 @@ process_file() {
     # (might it be a partiall commit).
     local stage="/tmp/$prefix-stage-$suffix-${filename//[\/\\]/-}"
     git show ":0:$filename" >"$stage"
+
+    # Escape special characters in the source filename:
+    # - '\': baskslash needs to be escaped
+    # - '*': used as matching string => '*' would mean expansion
+    #        (curiously, '?' must not be escaped)
+    # - '[': used as matching string => '[' would mean start of set
+    # - '|': used as sed split char instead of '/', so it needs to be escaped
+    #        in the filename
+    # printf %s is particularly important if the filename contains the % character
+    source_escaped=$(printf "%s" "$stage" | sed -e 's/[\*[|]/\\&/g')
+
+    # Escape special characters in the target filename:
+    # Phase 1 (characters escaped in the output diff):
+    #     - '\': baskslash needs to be escaped in the output diff
+    #     - '"': quote needs to be escaped in the output diff if present inside
+    #            of the filename, as it used to bracket the entire filename part
+    # Phase 2 (characters escaped in the match replacement):
+    #     - '\': baskslash needs to be escaped again for the sed itself
+    #            (i.e. double escaping after phase 1)
+    #     - '&': would expand to matched string
+    #     - '|': used as sed split char instead of '/'
+    # printf %s is particularly important if the filename contains the % character
+    target_escaped=$(printf "%s" "$filename" | sed -e 's/[\"]/\\&/g' -e 's/[\&|]/\\&/g')
 
     # Process the source file, create a patch with diff and append it
     # to the complete patch
@@ -241,7 +275,7 @@ process_file() {
     # Else it could not be applied with 'git apply'.
     "$UNCRUSTIFY" -c "$CONFIG" -l "$SOURCE_LANGUAGE" -f "$stage" -q -L 2 | \
         diff -u -- "$stage" - | \
-        sed -e "1s|--- $stage|--- a/$filename|" -e "2s|+++ -|+++ b/$filename|" \
+        sed -e "1s|--- $source_escaped|--- \"a/$target_escaped\"|" -e "2s|+++ -|+++ \"b/$target_escaped\"|" \
         >> "$patchname"
 
     # Remove the temporary file
@@ -304,7 +338,7 @@ then
 fi
 
 # The patch wasn't applied automatically - notify the user and abort the commit
-printf "\nYou can apply these changes with:\n  git apply $patch\n"
+printf "\nYou can apply these changes with:\n  git apply %s\n" "$patch" 
 printf "(needs to be called from the root directory of the repository)\n"
 printf "Aborting commit. Apply changes and commit again or skip the check with"
 printf " --no-verify (not recommended).\n"

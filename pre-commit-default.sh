@@ -71,6 +71,7 @@ then
 fi
 
 # If there are whitespace errors, print the offending file names and fail.
-exec git diff-index --check --cached $against --
+# Disabled for the moment, to not prevent codestyle hooks.
+# exec git diff-index --check --cached $against --
 
 # EOF
