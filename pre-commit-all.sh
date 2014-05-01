@@ -40,8 +40,8 @@ set -e
 # They should be in the same folder as this script.
 # Hooks should return 0 if successful and nonzero to cancel the commit.
 # They are executed in the order in which they are listed.
-#HOOKS="default uncrustify"
-HOOKS="default uncrustify"
+#HOOKS="default cppcheck"
+HOOKS="default cppcheck"
 
 
 # ============================================================================ #
