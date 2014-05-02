@@ -30,26 +30,26 @@
 # Exit and fail on error immediately
 set -e
 
+# Source the utility script
+. "$(dirname -- "$0")/hook_utils.sh"
+
 
 # ============================================================================ |
 # CONFIGURE
+# ---------------------------------------------------------------------------- |
+# Do not modify this directly, use "git config [--global]" to configure.
 # ============================================================================ |
 
-# Pre-commit hooks to be executed
+# The list of available pre-commit hooks
 #
-# They should be in the same folder as this script.
-# Hooks should return 0 if successful and nonzero to cancel the commit.
-# They are executed in the order in which they are listed.
-#HOOKS="default uncrustify"
+# Do not edit here, configure by:
+#   "git config [--global] hooks.pre-commit.<hook> enabled/disabled"
 HOOKS="default uncrustify"
 
 
 # ============================================================================ #
 # EXECUTE
 # ============================================================================ #
-
-# Source the utility script
-. "$(dirname -- "$0")/hook_utils.sh"
 
 # Absolute path to this script, e.g. /home/user/bin/foo.sh
 SCRIPT="$(canonicalize_filename "$0")"
@@ -59,18 +59,24 @@ SCRIPTPATH="$(dirname -- "$SCRIPT")"
 
 for hook in $HOOKS
 do
-    echo "Running hook: $hook"
-    # run hook if it exists and is executable
-    # if it returns with nonzero exit with 1 and thus abort the commit
-    if [ -x "$SCRIPTPATH/pre-commit-$hook.sh" ]
+    # Check if the hook is enabled
+    if [ "$(git_option "hooks.pre-commit.$hook" "enable")" = "enable" ]
     then
-        "$SCRIPTPATH/pre-commit-$hook.sh" || exit 1
-    else
-        echo "Error: file pre-commit-$hook.sh not found."
-        echo "Aborting commit. Make sure the hook is in $SCRIPTPATH and executable."
-        echo "You can disable it by removing it from the list in $SCRIPT."
-        echo "You can skip all pre-commit hooks with --no-verify (not recommended)."
-        exit 1
+        echo "Running hook: $hook"
+        # Run hook if it exists and is executable
+        #
+        # If it returns with nonzero exit with 1 and thus abort the commit.
+        if [ -x "$SCRIPTPATH/pre-commit-$hook.sh" ]
+        then
+            "$SCRIPTPATH/pre-commit-$hook.sh" || exit 1
+        else
+            echo "Error: file pre-commit-$hook.sh not found."
+            echo "Aborting commit. Make sure the hook is in $SCRIPTPATH and executable."
+            echo "You can disable the hook by setting:"
+            echo "  git config --global hooks.pre-commit.$hook disable"
+            echo "You can skip all pre-commit hooks with --no-verify (not recommended)."
+            exit 1
+        fi
     fi
 done
 

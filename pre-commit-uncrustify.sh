@@ -41,38 +41,37 @@
 # Exit and fail on error immediately
 set -e
 
+# Source the utility script
+. "$(dirname -- "$0")/hook_utils.sh"
+
 
 # ============================================================================ #
 # CONFIGURE
+# ---------------------------------------------------------------------------- #
+# Do not modify this directly, use "git config [--global]" to configure.
 # ============================================================================ #
 
 # The user or company name
 #
 # Concatenated with " code style" for the informational messages.
-#COMPANY_NAME=Company
-COMPANY_NAME=Xiriar
+COMPANY_NAME="$(git_option "hooks.company" "Xiriar")"
 
 # Path to the Uncrustify binary
-#UNCRUSTIFY="/usr/bin/uncrustify"
-UNCRUSTIFY="uncrustify"
+UNCRUSTIFY="$(git_option "hooks.uncrustify.path" "$(which uncrustify)")"
 
 # Path to the Uncrustify configuration
-#CONFIG="$HOME/.config/uncrustify.cfg"
-CONFIG="$HOME/.config/uncrustify.cfg"
+CONFIG="$(git_option "hooks.uncrustify.config" "$(dirname -- "$(canonicalize_filename "$0")")/uncrustify.cfg")"
 
 # The source code language
 #
 # Available values: C, CPP, D, CS, JAVA, PAWN, VALA, OC, OC+.
-#SOURCE_LANGUAGE="CPP"
-SOURCE_LANGUAGE="CPP"
+SOURCE_LANGUAGE="$(git_option "hooks.uncrustify.language" "CPP")"
 
 # Remove any older patches from previous commits
-#CLEAN_OLD_PATCHES=true
-CLEAN_OLD_PATCHES=true
+CLEAN_OLD_PATCHES="$(git_option "hooks.uncrustify.cleanup" "true" "bool")"
 
 # File types to parse
-#FILE_TYPES=".c .h .cpp .hpp"
-FILE_TYPES=".c .h .cpp .hpp"
+FILE_TYPES="$(git_option "hooks.uncrustify.filetypes" ".c .h .cc .hh .cpp .hpp .cxx .hxx .inl .cu")"
 
 # Skip merge commits
 #
@@ -82,20 +81,17 @@ FILE_TYPES=".c .h .cpp .hpp"
 # - Applying code style patches on merges can sometimes cause conflicts when
 #   merging back and forth.
 # Also aplies to cherry-picks.
-#SKIP_MERGE=true
+SKIP_MERGE="$(git_option "hooks.uncrustify.skipmerge" "false" "bool")"
 
 # Apply the patch to the index automatically
 #
 # Warning: This can be dangerous (the review of the changes is skipped).
-#AUTO_APPLY=true
+AUTO_APPLY="$(git_option "hooks.uncrustify.autoapply" "false" "bool")"
 
 
 # ============================================================================ #
 # EXECUTE
 # ============================================================================ #
-
-# Source the utility script
-. "$(dirname -- "$0")/hook_utils.sh"
 
 printf "Starting the $COMPANY_NAME code style check - please wait ...\n"
 
@@ -125,7 +121,18 @@ fi
 if [ ! -f "$CONFIG" ]
 then
     printf "Error: uncrustify config file not found.\n"
-    printf "Set the correct path in $(canonicalize_filename "$0").\n"
+    printf "Configure by:\n"
+    printf "  git config [--global] hooks.uncrustify.config <full_path>\n"
+    printf "(the path must be a full absolute path)\n"
+    exit 1
+fi
+
+if [ ! -x "$UNCRUSTIFY" ]
+then
+    printf "Error: The Uncrustify executable not found.\n"
+    printf "Configure by:\n"
+    printf "  git config [--global] hooks.uncrustify.path <full_path>\n"
+    printf "(the path must be a full absolute path)\n"
     exit 1
 fi
 

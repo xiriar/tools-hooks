@@ -31,6 +31,9 @@
 set -e
 
 # Execute the global pre-commit hook script
-exec "~/.gitconf/hooks/pre-commit-all.sh"
+#
+# Get the path from Git configuration "hooks.path" if set,
+# use "$HOME/.gitconf/hooks" as a default.
+exec "$(git config --path "hooks.path" || printf "$HOME/.gitconf/hooks")/pre-commit-all.sh"
 
 # EOF
