@@ -142,10 +142,10 @@ suffix="$(date +%s)"
 patch="/tmp/$prefix-$suffix.patch"
 
 # Remove old temporary files (always, even if CLEAN_OLD_PATCHES not set)
-rm -f /tmp/$prefix-stage*
+rm -f /tmp/$prefix-stage* || true
 
 # Remove any older uncrustify patches
-[ -n "$CLEAN_OLD_PATCHES" ] && $CLEAN_OLD_PATCHES && rm -f /tmp/$prefix*.patch
+[ -n "$CLEAN_OLD_PATCHES" ] && $CLEAN_OLD_PATCHES && rm -f /tmp/$prefix*.patch || true
 
 # Clean the current patch, if it already exists
 [ -f "$patch" ] && rm -f "$patch"
@@ -218,14 +218,14 @@ do
         >> "$patch"
 
     # Remove the temporary file
-    rm -f "$stage"
+    rm -f "$stage" || true
 done
 
 # If no patch has been generated all is ok, clean up the file stub and exit
 if [ ! -s "$patch" ]
 then
     printf "Files in this commit comply with the $COMPANY_NAME code style guidelines.\n"
-    rm -f "$patch"
+    rm -f "$patch" || true
     exit 0
 fi
 
@@ -249,7 +249,7 @@ then
         then
             printf "(application to the working dir failed - working dir left unchanged)\n"
         fi
-        rm -f "$patch"
+        rm -f "$patch" || true
         printf "\nFiles in this commit patched to comply with the $COMPANY_NAME"
         printf " code style guidelines.\n"
         exit 0
