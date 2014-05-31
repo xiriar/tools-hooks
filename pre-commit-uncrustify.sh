@@ -57,10 +57,10 @@ set -e
 COMPANY_NAME="$(git_option "hooks.company" "Xiriar")"
 
 # Path to the Uncrustify binary
-UNCRUSTIFY="$(git_option "hooks.uncrustify.path" "$(which uncrustify)")"
+UNCRUSTIFY="$(git_option "hooks.uncrustify.path" "$(which uncrustify)" "path")"
 
 # Path to the Uncrustify configuration
-CONFIG="$(git_option "hooks.uncrustify.config" "$(dirname -- "$(canonicalize_filename "$0")")/uncrustify.cfg")"
+CONFIG="$(git_option "hooks.uncrustify.config" "$(dirname -- "$(canonicalize_filename "$0")")/uncrustify.cfg" "path")"
 
 # The source code language
 #
