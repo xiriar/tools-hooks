@@ -141,8 +141,10 @@ prefix="pre-commit-uncrustify"
 suffix="$(date +%s)"
 patch="/tmp/$prefix-$suffix.patch"
 
-# Remove old temporary files (always, even if CLEAN_OLD_PATCHES not set)
-rm -f /tmp/$prefix-stage* || true
+# Clean up any older dumps from previous runs
+#
+# Those could remain in the mirror location, if the user aborted the script)
+rm -rf /tmp/$prefix-*.dmp/ || true
 
 # Remove any older uncrustify patches
 [ -n "$CLEAN_OLD_PATCHES" ] && $CLEAN_OLD_PATCHES && rm -f /tmp/$prefix*.patch || true
@@ -150,11 +152,35 @@ rm -f /tmp/$prefix-stage* || true
 # Clean the current patch, if it already exists
 [ -f "$patch" ] && rm -f "$patch"
 
+# Get the list of modified files
+filelist="$(git diff-index --cached --diff-filter=ACMR --name-only $against --)"
+
+# Dump the current index state to a mirror location
+#
+# This helps to handle partially committed files, and also allows to continue
+# working in the current working directory during the run of the script.
+mirror="/tmp/$prefix-$suffix.dmp/"
+printf "Dumping the current commit index to the mirror location ...\n"
+
+# Only the checked files are dumped, to improve the index dump speed
+printf "%s\n" "$filelist" | git checkout-index "--prefix=$mirror" --stdin
+
+printf "... index dump done.\n"
+
+# Need to restore the working directory after work
+working_dir="$(pwd)"
+
+# Chdir to the mirror location, to consider the partially staged files
+#
+# This also allows to continue working in the current working directory
+# while performing the check.
+cd -- "$mirror"
+
 # Create one patch containing all changes to the files
 #
 # Remove quotes around the filename by "sed", if inserted by the system
 # (done sometimes, if the filename contains special characters, like the quote itself).
-git diff-index --cached --diff-filter=ACMR --name-only $against -- | \
+printf "%s\n" "$filelist" | \
     sed -e 's/^"\(.*\)"$/\1/' | \
     while read filename
 do
@@ -174,13 +200,6 @@ do
 
     printf "Checking file: %s\n" "$filename"
 
-    # Save the file which is in the staging area
-    #
-    # This is to check the currently staged status
-    # (might it be a partiall commit).
-    stage="/tmp/$prefix-stage-$suffix-${filename//[\/\\]/-}"
-    git show ":0:$filename" >"$stage"
-
     # Escape special characters in the source filename:
     # - '\': baskslash needs to be escaped
     # - '*': used as matching string => '*' would mean expansion
@@ -189,7 +208,7 @@ do
     # - '|': used as sed split char instead of '/', so it needs to be escaped
     #        in the filename
     # printf %s is particularly important if the filename contains the % character
-    source_escaped=$(printf "%s" "$stage" | sed -e 's/[\*[|]/\\&/g')
+    source_escaped=$(printf "%s" "$filename" | sed -e 's/[\*[|]/\\&/g')
 
     # Escape special characters in the target filename:
     # Phase 1 (characters escaped in the output diff):
@@ -212,14 +231,17 @@ do
     #    +++ - timestamp
     # to both lines working on the same file and having a a/ and b/ prefix.
     # Else it could not be applied with 'git apply'.
-    "$UNCRUSTIFY" -c "$CONFIG" -l "$SOURCE_LANGUAGE" -f "$stage" -q -L 2 | \
-        diff -u -- "$stage" - | \
+    "$UNCRUSTIFY" -c "$CONFIG" -l "$SOURCE_LANGUAGE" -f "$filename" -q -L 2 | \
+        diff -u -- "$filename" - | \
         sed -e "1s|--- $source_escaped|--- \"a/$target_escaped\"|" -e "2s|+++ -|+++ \"b/$target_escaped\"|" \
         >> "$patch"
-
-    # Remove the temporary file
-    rm -f "$stage" || true
 done
+
+# Restore the working directory
+cd -- "$working_dir"
+
+# Remove the index dump
+rm -rf -- "$mirror" || true
 
 # If no patch has been generated all is ok, clean up the file stub and exit
 if [ ! -s "$patch" ]
