@@ -255,7 +255,13 @@ fi
 printf "\nThe following differences were found between the code to commit "
 printf "and the $COMPANY_NAME code style guidelines:\n\n"
 
-cat "$patch"
+# only show first N lines of the patch
+nmaxlines=25
+cat "$patch" | head -n "$nmaxlines"
+if [ $(wc -l <"$patch") -gt "$nmaxlines" ]
+then
+    printf "\n(first %s lines shown)\n" "$nmaxlines"
+fi
 
 # Check the auto-apply option
 if [ -n "$AUTO_APPLY" ] && $AUTO_APPLY
