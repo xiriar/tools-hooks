@@ -191,58 +191,39 @@ create_patch() {
     # while performing the check.
     cd -- "$mirror"
 
-    # Remove quotes around the filename by "sed", if inserted by the system
-    #
-    # Done by the system sometimes, if the filename contains special characters,
-    # like the quote itself.
-    printf "%s\n" "$filelist" | \
-        sed -e 's/^"\(.*\)"$/\1/' | \
-    (
-        # Prepare file lists for the particular threads
-        local files=""
-        local nproc=0
-        while read filename
-        do
-            # Ignore the file if we check the file type and the file
-            # does not match any of the extensions specified in $FILE_TYPES
-            if [ -n "$FILE_TYPES" ] && ! test_file_ext "$filename" "$FILE_TYPES"
-            then
-                continue
-            fi
+    # Count the number of filenames in the list
+    local left=$(printf "%s\n" "$filelist" | wc -l)
 
-            # Skip directories
-            if [ -d "$filename" ]
-            then
-                printf "Skipping the directory: %s\n" "$filename"
-                continue
-            fi
+    local proc=0
+    local block=0
+    local first=1
+    local last=0
+    local files=""
 
-            # We want the trailing newline
-            files=$(eval printf -- \""$"list_$nproc\")
-            eval list_$nproc="\"$(printf -- "%s\n%s" "$filename" "$files")\""
+    local i=0
+    while [ $i -lt $PARALLEL_PROC ]
+    do
+        # Remaining processors available
+        proc=$(($PARALLEL_PROC-$i))
+        # Size of current block
+        block=$((($left+$proc-1)/$proc))
+        # Last line of the block
+        last=$(($first+$block-1))
 
-            nproc=$(($nproc+1))
-            [ "$nproc" -eq "$PARALLEL_PROC" ] && nproc=0
+        # Extract the lines $first-$last from the file list
+        files=$(printf "%s\n" "$filelist" | sed -ne "${first},${last}p;${last}q")
 
-        done
+        # Process the list block in parallel background task
+        process_list "$files" "/tmp/$prefix-temp-$suffix-$i.tmp" &
 
-        #printf "Listing done.\n"
-        #printf "%s---\n" "${files[@]}"
+        # Prepare for the next iteration
+        first=$(($last+1))
+        left=$(($left-$block))
+        i=$(($i+1))
+    done
 
-        # Process the prepared lists
-        nproc=0
-        while [ $nproc -lt $PARALLEL_PROC ]
-        do
-            files=$(eval printf -- \""$"list_$nproc\")
-            #printf "Check list:\n$files\n"
-            # Run the tasks in parallel background threads
-            process_list "$files" "/tmp/$prefix-temp-$suffix-$nproc.tmp" &
-            nproc=$(($nproc+1))
-        done
-
-        # Wait for all tasks to complete
-        wait
-    )
+    # Wait for all tasks to complete
+    wait
 
     # Restore the working directory
     cd -- "$working_dir"
@@ -258,54 +239,66 @@ process_list() {
     local patchname="$2"
     #printf "Patch file: $patchname\n"
 
-    printf -- "$filelist\n" | while read filename
-    do
-        process_file "$filename" "$patchname"
-    done
-}
-
-
-# Process a single file
-process_file() {
-    local filename="$1"
-    local patchname="$2"
-    printf "Checking file: %s\n" "$filename"
-
-    # Escape special characters in the source filename:
-    # - '\': baskslash needs to be escaped
-    # - '*': used as matching string => '*' would mean expansion
-    #        (curiously, '?' must not be escaped)
-    # - '[': used as matching string => '[' would mean start of set
-    # - '|': used as sed split char instead of '/', so it needs to be escaped
-    #        in the filename
-    # printf %s is particularly important if the filename contains the % character
-    source_escaped=$(printf "%s" "$filename" | sed -e 's/[\*[|]/\\&/g')
-
-    # Escape special characters in the target filename:
-    # Phase 1 (characters escaped in the output diff):
-    #     - '\': baskslash needs to be escaped in the output diff
-    #     - '"': quote needs to be escaped in the output diff if present inside
-    #            of the filename, as it used to bracket the entire filename part
-    # Phase 2 (characters escaped in the match replacement):
-    #     - '\': baskslash needs to be escaped again for the sed itself
-    #            (i.e. double escaping after phase 1)
-    #     - '&': would expand to matched string
-    #     - '|': used as sed split char instead of '/'
-    # printf %s is particularly important if the filename contains the % character
-    target_escaped=$(printf "%s" "$filename" | sed -e 's/[\"]/\\&/g' -e 's/[\&|]/\\&/g')
-
-    # Process the source file, create a patch with diff and append it
-    # to the complete patch
+    # Remove quotes around the filename by "sed", if inserted by the system
     #
-    # The sed call is necessary to transform the patch from
-    #    --- $file timestamp
-    #    +++ - timestamp
-    # to both lines working on the same file and having a a/ and b/ prefix.
-    # Else it could not be applied with 'git apply'.
-    "$UNCRUSTIFY" -c "$CONFIG" -l "$SOURCE_LANGUAGE" -f "$filename" -q -L 2 | \
-        diff -u -- "$filename" - | \
-        sed -e "1s|--- $source_escaped|--- \"a/$target_escaped\"|" -e "2s|+++ -|+++ \"b/$target_escaped\"|" \
-        >> "$patchname"
+    # Done by the system sometimes, if the filename contains special characters,
+    # like the quote itself.
+    printf "%s\n" "$filelist" | \
+        sed -e 's/^"\(.*\)"$/\1/' | \
+        while read filename
+    do
+        # Ignore the file if we check the file type and the file
+        # does not match any of the extensions specified in $FILE_TYPES
+        if [ -n "$FILE_TYPES" ] && ! test_file_ext "$filename" "$FILE_TYPES"
+        then
+            continue
+        fi
+
+        # Skip directories
+        if [ -d "$filename" ]
+        then
+            printf "Skipping the directory: %s\n" "$filename"
+            continue
+        fi
+
+        printf "Checking file: %s\n" "$filename"
+
+        # Escape special characters in the source filename:
+        # - '\': baskslash needs to be escaped
+        # - '*': used as matching string => '*' would mean expansion
+        #        (curiously, '?' must not be escaped)
+        # - '[': used as matching string => '[' would mean start of set
+        # - '|': used as sed split char instead of '/', so it needs to be escaped
+        #        in the filename
+        # printf %s is particularly important if the filename contains the % character
+        source_escaped=$(printf "%s" "$filename" | sed -e 's/[\*[|]/\\&/g')
+
+        # Escape special characters in the target filename:
+        # Phase 1 (characters escaped in the output diff):
+        #     - '\': baskslash needs to be escaped in the output diff
+        #     - '"': quote needs to be escaped in the output diff if present inside
+        #            of the filename, as it used to bracket the entire filename part
+        # Phase 2 (characters escaped in the match replacement):
+        #     - '\': baskslash needs to be escaped again for the sed itself
+        #            (i.e. double escaping after phase 1)
+        #     - '&': would expand to matched string
+        #     - '|': used as sed split char instead of '/'
+        # printf %s is particularly important if the filename contains the % character
+        target_escaped=$(printf "%s" "$filename" | sed -e 's/[\"]/\\&/g' -e 's/[\&|]/\\&/g')
+
+        # Process the source file, create a patch with diff and append it
+        # to the complete patch
+        #
+        # The sed call is necessary to transform the patch from
+        #    --- $file timestamp
+        #    +++ - timestamp
+        # to both lines working on the same file and having a a/ and b/ prefix.
+        # Else it could not be applied with 'git apply'.
+        "$UNCRUSTIFY" -c "$CONFIG" -l "$SOURCE_LANGUAGE" -f "$filename" -q -L 2 | \
+            diff -u -- "$filename" - | \
+            sed -e "1s|--- $source_escaped|--- \"a/$target_escaped\"|" -e "2s|+++ -|+++ \"b/$target_escaped\"|" \
+            >> "$patchname"
+    done
 }
 
 
