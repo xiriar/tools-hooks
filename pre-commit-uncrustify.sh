@@ -141,6 +141,15 @@ then
     exit 1
 fi
 
+# Check the number of parallel tasks
+if [ "$PARALLEL_PROC" -lt 1 ]
+then
+    printf "Error: Number of parallel tasks set to %s\n" "$PARALLEL_PROC"
+    printf "Configure by:\n"
+    printf "  git config [--global] hooks.uncrustify.parallel <full_path>\n"
+    exit 1
+fi
+
 # Create a random filename to store our generated patch
 prefix="pre-commit-uncrustify"
 suffix="$(date +%s)"
