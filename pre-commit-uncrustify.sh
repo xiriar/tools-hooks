@@ -163,85 +163,93 @@ mirror="/tmp/$prefix-$suffix.dmp/"
 printf "Dumping the current commit index to the mirror location ...\n"
 
 # Only the checked files are dumped, to improve the index dump speed
-printf "%s\n" "$filelist" | git checkout-index "--prefix=$mirror" --stdin
+if [ -n "$filelist" ]
+then
+    printf "%s\n" "$filelist" | git checkout-index "--prefix=$mirror" --stdin
+fi
 
 printf "... index dump done.\n"
 
-# Need to restore the working directory after work
-working_dir="$(pwd)"
-
-# Chdir to the mirror location, to consider the partially staged files
-#
-# This also allows to continue working in the current working directory
-# while performing the check.
-cd -- "$mirror"
 
 # Create one patch containing all changes to the files
-#
-# Remove quotes around the filename by "sed", if inserted by the system
-# (done sometimes, if the filename contains special characters, like the quote itself).
-printf "%s\n" "$filelist" | \
-    sed -e 's/^"\(.*\)"$/\1/' | \
-    while read filename
-do
-    # Ignore the file if we check the file type and the file
-    # does not match any of the extensions specified in $FILE_TYPES
-    if [ -n "$FILE_TYPES" ] && ! test_file_ext "$filename" "$FILE_TYPES"
-    then
-        continue
-    fi
+if [ -n "$filelist" ]
+then
 
-    # Skip directories
-    if [ -d "$filename" ]
-    then
-        printf "Skipping the directory: %s\n" "$filename"
-        continue
-    fi
+    # Need to restore the working directory after work
+    working_dir="$(pwd)"
 
-    printf "Checking file: %s\n" "$filename"
-
-    # Escape special characters in the source filename:
-    # - '\': baskslash needs to be escaped
-    # - '*': used as matching string => '*' would mean expansion
-    #        (curiously, '?' must not be escaped)
-    # - '[': used as matching string => '[' would mean start of set
-    # - '|': used as sed split char instead of '/', so it needs to be escaped
-    #        in the filename
-    # printf %s is particularly important if the filename contains the % character
-    source_escaped=$(printf "%s" "$filename" | sed -e 's/[\*[|]/\\&/g')
-
-    # Escape special characters in the target filename:
-    # Phase 1 (characters escaped in the output diff):
-    #     - '\': baskslash needs to be escaped in the output diff
-    #     - '"': quote needs to be escaped in the output diff if present inside
-    #            of the filename, as it used to bracket the entire filename part
-    # Phase 2 (characters escaped in the match replacement):
-    #     - '\': baskslash needs to be escaped again for the sed itself
-    #            (i.e. double escaping after phase 1)
-    #     - '&': would expand to matched string
-    #     - '|': used as sed split char instead of '/'
-    # printf %s is particularly important if the filename contains the % character
-    target_escaped=$(printf "%s" "$filename" | sed -e 's/[\"]/\\&/g' -e 's/[\&|]/\\&/g')
-
-    # Process the source file, create a patch with diff and append it
-    # to the complete patch
+    # Chdir to the mirror location, to consider the partially staged files
     #
-    # The sed call is necessary to transform the patch from
-    #    --- $file timestamp
-    #    +++ - timestamp
-    # to both lines working on the same file and having a a/ and b/ prefix.
-    # Else it could not be applied with 'git apply'.
-    "$UNCRUSTIFY" -c "$CONFIG" -l "$SOURCE_LANGUAGE" -f "$filename" -q -L 2 | \
-        diff -u -- "$filename" - | \
-        sed -e "1s|--- $source_escaped|--- \"a/$target_escaped\"|" -e "2s|+++ -|+++ \"b/$target_escaped\"|" \
-        >> "$patch"
-done
+    # This also allows to continue working in the current working directory
+    # while performing the check.
+    cd -- "$mirror"
 
-# Restore the working directory
-cd -- "$working_dir"
+    # sed to remove quotes around the filename, if inserted by the system
+    # (done sometimes, if the filename contains special characters, like the quote itself)
+    printf "%s\n" "$filelist" | \
+        sed -e 's/^"\(.*\)"$/\1/' | \
+        while read filename
+    do
+        # Ignore the file if we check the file type and the file
+        # does not match any of the extensions specified in $FILE_TYPES
+        if [ -n "$FILE_TYPES" ] && ! test_file_ext "$filename" "$FILE_TYPES"
+        then
+            continue
+        fi
 
-# Remove the index dump
-rm -rf -- "$mirror" || true
+        # Skip directories
+        if [ -d "$filename" ]
+        then
+            printf "Skipping the directory: %s\n" "$filename"
+            continue
+        fi
+
+        printf "Checking file: %s\n" "$filename"
+
+        # Escape special characters in the source filename:
+        # - '\': baskslash needs to be escaped
+        # - '*': used as matching string => '*' would mean expansion
+        #        (curiously, '?' must not be escaped)
+        # - '[': used as matching string => '[' would mean start of set
+        # - '|': used as sed split char instead of '/', so it needs to be escaped
+        #        in the filename
+        # printf %s is particularly important if the filename contains the % character
+        source_escaped=$(printf "%s" "$filename" | sed -e 's/[\*[|]/\\&/g')
+
+        # Escape special characters in the target filename:
+        # Phase 1 (characters escaped in the output diff):
+        #     - '\': baskslash needs to be escaped in the output diff
+        #     - '"': quote needs to be escaped in the output diff if present inside
+        #            of the filename, as it used to bracket the entire filename part
+        # Phase 2 (characters escaped in the match replacement):
+        #     - '\': baskslash needs to be escaped again for the sed itself
+        #            (i.e. double escaping after phase 1)
+        #     - '&': would expand to matched string
+        #     - '|': used as sed split char instead of '/'
+        # printf %s is particularly important if the filename contains the % character
+        target_escaped=$(printf "%s" "$filename" | sed -e 's/[\"]/\\&/g' -e 's/[\&|]/\\&/g')
+
+        # Process the source file, create a patch with diff and append it
+        # to the complete patch
+        #
+        # The sed call is necessary to transform the patch from
+        #    --- $file timestamp
+        #    +++ - timestamp
+        # to both lines working on the same file and having a a/ and b/ prefix.
+        # Else it could not be applied with 'git apply'.
+        "$UNCRUSTIFY" -c "$CONFIG" -l "$SOURCE_LANGUAGE" -f "$filename" -q -L 2 | \
+            diff -u -- "$filename" - | \
+            sed -e "1s|--- $source_escaped|--- \"a/$target_escaped\"|" -e "2s|+++ -|+++ \"b/$target_escaped\"|" \
+            >> "$patch"
+    done
+
+    # Restore the working directory
+    cd -- "$working_dir"
+
+    # Remove the index dump
+    rm -rf -- "$mirror" || true
+fi
+
 
 # If no patch has been generated all is ok, clean up the file stub and exit
 if [ ! -s "$patch" ]
