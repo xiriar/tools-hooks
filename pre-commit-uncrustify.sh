@@ -93,7 +93,7 @@ AUTO_APPLY="$(git_option "hooks.uncrustify.autoapply" "false" "bool")"
 # EXECUTE
 # ============================================================================ #
 
-printf "Starting the $COMPANY_NAME code style check - please wait ...\n"
+printf "Starting the %s code style check - please wait ...\n" "$COMPANY_NAME"
 
 # Check the merge commits
 if [ -f ".git/MERGE_MSG" ]
@@ -254,14 +254,14 @@ fi
 # If no patch has been generated all is ok, clean up the file stub and exit
 if [ ! -s "$patch" ]
 then
-    printf "Files in this commit comply with the $COMPANY_NAME code style guidelines.\n"
+    printf "Files in this commit comply with the %s code style guidelines.\n" "$COMPANY_NAME"
     rm -f "$patch" || true
     exit 0
 fi
 
 # A patch has been created
 printf "\nThe following differences were found between the code to commit "
-printf "and the $COMPANY_NAME code style guidelines:\n\n"
+printf "and the %s code style guidelines:\n\n" "$COMPANY_NAME"
 
 # only show first N lines of the patch
 nmaxlines=25
@@ -286,7 +286,7 @@ then
             printf "(application to the working dir failed - working dir left unchanged)\n"
         fi
         rm -f "$patch" || true
-        printf "\nFiles in this commit patched to comply with the $COMPANY_NAME"
+        printf "\nFiles in this commit patched to comply with the %s" "$COMPANY_NAME"
         printf " code style guidelines.\n"
         exit 0
     fi
