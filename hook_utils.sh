@@ -88,4 +88,22 @@ test_file_ext() {
 }
 
 
+##
+# Get an option from the Git configuration
+git_option() {
+    local opt_key="$1"
+    local opt_default="$2"
+    local opt_type="$3"
+
+    # Either print the git setting ("git config ..." rc == 0)
+    # or print the default value ("git config ..." rc != 0)
+    if [ -n "$type" ]
+    then
+        git config "--$opt_type" -- "$opt_key" || printf -- "%s" "$opt_default"
+    else
+        git config -- "$opt_key" || printf -- "%s" "$opt_default"
+    fi
+}
+
+
 # EOF
