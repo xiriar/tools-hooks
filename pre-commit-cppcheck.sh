@@ -120,9 +120,6 @@ rm -rf /tmp/$prefix-*.dmp/ || true
 # Remove any older uncrustify patches
 [ -n "$CLEAN_OLD_REPORTS" ] && $CLEAN_OLD_REPORTS && rm -f /tmp/$prefix*.report || true
 
-# Clean the current report, if it already exists
-[ -f "$report" ] && rm -f "$report"
-
 # Get the list of modified files
 filelist="$(git diff-index --cached --diff-filter=ACMR --name-only $against --)"
 
@@ -155,33 +152,10 @@ then
     # while performing the check.
     cd -- "$mirror"
 
-    # sed to remove quotes around the filename, if inserted by the system
-    # (done sometimes, if the filename contains special characters, like the quote itself)
-    printf "%s\n" "$filelist" | \
-        sed -e 's/^"\(.*\)"$/\1/' | \
-        while read filename
-    do
-        # Ignore the file if we check the file type and the file
-        # does not match any of the extensions specified in $FILE_TYPES
-        if [ -n "$FILE_TYPES" ] && ! test_file_ext "$filename" "$FILE_TYPES"
-        then
-            continue
-        fi
-
-        # Skip directories
-        if [ -d "$filename" ]
-        then
-            printf "Skipping the directory: %s\n" "$filename"
-            continue
-        fi
-
-        printf "Checking file: %s\n" "$filename"
-
-        # Process the source file
-        "$CPPCHECK" "--std=$CPP_STANDARD" -q --enable=warning --inconclusive \
-            --enable=performance --enable=portability --enable=style \
-            "$filename" >>"$report" 2>>"$report"
-    done
+    # Process the source files
+    "$CPPCHECK" "--std=$CPP_STANDARD" --enable=warning --inconclusive \
+        --enable=performance --enable=portability --enable=style \
+        . 2>"$report"
 
     # Restore the working directory
     cd -- "$working_dir"
