@@ -68,6 +68,11 @@ FILE_TYPES="$(git_option "hooks.cppcheck.filetypes" ".c .h .cc .hh .cpp .hpp .cx
 # Also aplies to cherry-picks.
 SKIP_MERGE="$(git_option "hooks.cppcheck.skipmerge" "false" "bool")"
 
+# Count of simultaneous parallel tasks
+#
+# Can improve performance for large commits (especially merge commits).
+PARALLEL_PROC=$(git_option "hooks.cppcheck.parallel" "4" "int")
+
 
 # ============================================================================ #
 # EXECUTE
@@ -107,6 +112,15 @@ then
     exit 1
 fi
 
+# Check the number of parallel tasks
+if [ "$PARALLEL_PROC" -lt 1 ]
+then
+    printf "Error: Number of parallel tasks set to %s\n" "$PARALLEL_PROC"
+    printf "Configure by:\n"
+    printf "  git config [--global] hooks.cppcheck.parallel <full_path>\n"
+    exit 1
+fi
+
 # Create a random filename to store our generated report
 prefix="pre-commit-cppcheck"
 suffix="$(date +%s)"
@@ -140,6 +154,9 @@ printf "... index dump done.\n"
 
 
 # Run the CppCheck static analysis
+
+printf "Parallel processing in $PARALLEL_PROC threads\n"
+
 if [ -n "$filelist" ]
 then
 
@@ -153,7 +170,7 @@ then
     cd -- "$mirror"
 
     # Process the source files
-    "$CPPCHECK" "--std=$CPP_STANDARD" --enable=warning --inconclusive \
+    "$CPPCHECK" "--std=$CPP_STANDARD" -j "$PARALLEL_PROC" --enable=warning --inconclusive \
         --enable=performance --enable=portability --enable=style \
         . 2>"$report"
 
