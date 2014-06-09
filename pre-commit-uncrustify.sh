@@ -98,7 +98,7 @@ PARALLEL_PROC=$(git_option "hooks.uncrustify.parallel" "4" "int")
 # EXECUTE
 # ============================================================================ #
 
-printf "Starting the $COMPANY_NAME code style check - please wait ...\n"
+printf "Starting the %s code style check - please wait ...\n" "$COMPANY_NAME"
 
 # Check the merge commits
 if [ -f ".git/MERGE_MSG" ]
@@ -181,7 +181,10 @@ mirror="/tmp/$prefix-$suffix.dmp/"
 printf "Dumping the current commit index to the mirror location ...\n"
 
 # Only the checked files are dumped, to improve the index dump speed
-printf "%s\n" "$filelist" | git checkout-index "--prefix=$mirror" --stdin
+if [ -n "$filelist" ]
+then
+    printf "%s\n" "$filelist" | git checkout-index "--prefix=$mirror" --stdin
+fi
 
 printf "... index dump done.\n"
 
@@ -191,54 +194,58 @@ create_patch() {
 
     printf "Parallel processing in $PARALLEL_PROC threads\n"
 
-    # Need to restore the working directory after work
-    local working_dir="$(pwd)"
+    if [ -n "$filelist" ]
+    then
 
-    # Chdir to the mirror location, to consider the partially staged files
-    #
-    # This also allows to continue working in the current working directory
-    # while performing the check.
-    cd -- "$mirror"
+        # Need to restore the working directory after work
+        local working_dir="$(pwd)"
 
-    # Count the number of filenames in the list
-    local left=$(printf "%s\n" "$filelist" | wc -l)
+        # Chdir to the mirror location, to consider the partially staged files
+        #
+        # This also allows to continue working in the current working directory
+        # while performing the check.
+        cd -- "$mirror"
 
-    local proc=0
-    local block=0
-    local first=1
-    local last=0
-    local files=""
+        # Count the number of filenames in the list
+        local left=$(printf "%s\n" "$filelist" | wc -l)
 
-    local i=0
-    while [ $i -lt $PARALLEL_PROC ]
-    do
-        # Remaining processors available
-        proc=$(($PARALLEL_PROC-$i))
-        # Size of current block
-        block=$((($left+$proc-1)/$proc))
-        # Last line of the block
-        last=$(($first+$block-1))
+        local proc=0
+        local block=0
+        local first=1
+        local last=0
+        local files=""
 
-        # Extract the lines $first-$last from the file list
-        files=$(printf "%s\n" "$filelist" | sed -ne "${first},${last}p;${last}q")
+        local i=0
+        while [ $i -lt $PARALLEL_PROC ]
+        do
+            # Remaining processors available
+            proc=$(($PARALLEL_PROC-$i))
+            # Size of current block
+            block=$((($left+$proc-1)/$proc))
+            # Last line of the block
+            last=$(($first+$block-1))
 
-        # Process the list block in parallel background task
-        process_list "$files" "/tmp/$prefix-temp-$suffix-$i.tmp" &
+            # Extract the lines $first-$last from the file list
+            files=$(printf "%s\n" "$filelist" | sed -ne "${first},${last}p;${last}q")
 
-        # Prepare for the next iteration
-        first=$(($last+1))
-        left=$(($left-$block))
-        i=$(($i+1))
-    done
+            # Process the list block in parallel background task
+            process_list "$files" "/tmp/$prefix-temp-$suffix-$i.tmp" &
 
-    # Wait for all tasks to complete
-    wait
+            # Prepare for the next iteration
+            first=$(($last+1))
+            left=$(($left-$block))
+            i=$(($i+1))
+        done
 
-    # Restore the working directory
-    cd -- "$working_dir"
+        # Wait for all tasks to complete
+        wait
 
-    # Remove the index dump
-    rm -rf -- "$mirror" || true
+        # Restore the working directory
+        cd -- "$working_dir"
+
+        # Remove the index dump
+        rm -rf -- "$mirror" || true
+    fi
 }
 
 
@@ -332,14 +339,14 @@ done
 # If no patch has been generated all is ok, clean up the file stub and exit
 if [ ! -s "$patch" ]
 then
-    printf "Files in this commit comply with the $COMPANY_NAME code style guidelines.\n"
+    printf "Files in this commit comply with the %s code style guidelines.\n" "$COMPANY_NAME"
     rm -f "$patch" || true
     exit 0
 fi
 
 # A patch has been created
 printf "\nThe following differences were found between the code to commit "
-printf "and the $COMPANY_NAME code style guidelines:\n\n"
+printf "and the %s code style guidelines:\n\n" "$COMPANY_NAME"
 
 # only show first N lines of the patch
 nmaxlines=25
@@ -364,7 +371,7 @@ then
             printf "(application to the working dir failed - working dir left unchanged)\n"
         fi
         rm -f "$patch" || true
-        printf "\nFiles in this commit patched to comply with the $COMPANY_NAME"
+        printf "\nFiles in this commit patched to comply with the %s" "$COMPANY_NAME"
         printf " code style guidelines.\n"
         exit 0
     fi
