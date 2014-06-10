@@ -44,7 +44,7 @@ set -e
 #
 # Do not edit here, configure by:
 #   "git config [--global] hooks.pre-commit.<hook> enabled/disabled"
-HOOKS="default uncrustify cppcheck"
+HOOKS="default global"
 
 
 # ============================================================================ #
