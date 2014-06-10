@@ -88,6 +88,11 @@ SKIP_MERGE="$(git_option "hooks.uncrustify.skipmerge" "false" "bool")"
 # Warning: This can be dangerous (the review of the changes is skipped).
 AUTO_APPLY="$(git_option "hooks.uncrustify.autoapply" "false" "bool")"
 
+# Count of simultaneous parallel tasks
+#
+# Can improve performance for large commits (especially merge commits).
+PARALLEL_PROC=$(git_option "hooks.uncrustify.parallel" "4" "int")
+
 
 # ============================================================================ #
 # EXECUTE
@@ -136,10 +141,22 @@ then
     exit 1
 fi
 
+# Check the number of parallel tasks
+if [ "$PARALLEL_PROC" -lt 1 ]
+then
+    printf "Error: Number of parallel tasks set to %s\n" "$PARALLEL_PROC"
+    printf "Configure by:\n"
+    printf "  git config [--global] hooks.uncrustify.parallel <full_path>\n"
+    exit 1
+fi
+
 # Create a random filename to store our generated patch
 prefix="pre-commit-uncrustify"
 suffix="$(date +%s)"
 patch="/tmp/$prefix-$suffix.patch"
+
+# Remove old temporary files (always, even if CLEAN_OLD_PATCHES not set)
+rm -f /tmp/$prefix-temp* || true
 
 # Clean up any older dumps from previous runs
 #
@@ -151,6 +168,7 @@ rm -rf /tmp/$prefix-*.dmp/ || true
 
 # Clean the current patch, if it already exists
 [ -f "$patch" ] && rm -f "$patch"
+
 
 # Get the list of modified files
 filelist="$(git diff-index --cached --diff-filter=ACMR --name-only $against --)"
@@ -172,20 +190,75 @@ printf "... index dump done.\n"
 
 
 # Create one patch containing all changes to the files
-if [ -n "$filelist" ]
-then
+create_patch() {
 
-    # Need to restore the working directory after work
-    working_dir="$(pwd)"
+    printf "Parallel processing in $PARALLEL_PROC threads\n"
 
-    # Chdir to the mirror location, to consider the partially staged files
+    if [ -n "$filelist" ]
+    then
+
+        # Need to restore the working directory after work
+        local working_dir="$(pwd)"
+
+        # Chdir to the mirror location, to consider the partially staged files
+        #
+        # This also allows to continue working in the current working directory
+        # while performing the check.
+        cd -- "$mirror"
+
+        # Count the number of filenames in the list
+        local left=$(printf "%s\n" "$filelist" | wc -l)
+
+        local proc=0
+        local block=0
+        local first=1
+        local last=0
+        local files=""
+
+        local i=0
+        while [ $i -lt $PARALLEL_PROC ]
+        do
+            # Remaining processors available
+            proc=$(($PARALLEL_PROC-$i))
+            # Size of current block
+            block=$((($left+$proc-1)/$proc))
+            # Last line of the block
+            last=$(($first+$block-1))
+
+            # Extract the lines $first-$last from the file list
+            files=$(printf "%s\n" "$filelist" | sed -ne "${first},${last}p;${last}q")
+
+            # Process the list block in parallel background task
+            process_list "$files" "/tmp/$prefix-temp-$suffix-$i.tmp" &
+
+            # Prepare for the next iteration
+            first=$(($last+1))
+            left=$(($left-$block))
+            i=$(($i+1))
+        done
+
+        # Wait for all tasks to complete
+        wait
+
+        # Restore the working directory
+        cd -- "$working_dir"
+
+        # Remove the index dump
+        rm -rf -- "$mirror" || true
+    fi
+}
+
+
+# Process a file list
+process_list() {
+    local filelist="$1"
+    local patchname="$2"
+    #printf "Patch file: $patchname\n"
+
+    # Remove quotes around the filename by "sed", if inserted by the system
     #
-    # This also allows to continue working in the current working directory
-    # while performing the check.
-    cd -- "$mirror"
-
-    # sed to remove quotes around the filename, if inserted by the system
-    # (done sometimes, if the filename contains special characters, like the quote itself)
+    # Done by the system sometimes, if the filename contains special characters,
+    # like the quote itself.
     printf "%s\n" "$filelist" | \
         sed -e 's/^"\(.*\)"$/\1/' | \
         while read filename
@@ -240,15 +313,27 @@ then
         "$UNCRUSTIFY" -c "$CONFIG" -l "$SOURCE_LANGUAGE" -f "$filename" -q -L 2 | \
             diff -u -- "$filename" - | \
             sed -e "1s|--- $source_escaped|--- \"a/$target_escaped\"|" -e "2s|+++ -|+++ \"b/$target_escaped\"|" \
-            >> "$patch"
+            >> "$patchname"
     done
+}
 
-    # Restore the working directory
-    cd -- "$working_dir"
 
-    # Remove the index dump
-    rm -rf -- "$mirror" || true
-fi
+# Create the patch
+create_patch
+
+
+# Concatenate all the partial patch lists
+i=0
+while [ $i -lt $PARALLEL_PROC ]
+do
+    if [ -r "/tmp/$prefix-temp-$suffix-$i.tmp" ]
+    then
+        #printf "Concatenating diff: /tmp/$prefix-$suffix-$i.patch.tmp\n"
+        cat "/tmp/$prefix-temp-$suffix-$i.tmp" >> "$patch"
+        rm -f "/tmp/$prefix-temp-$suffix-$i.tmp" || true
+    fi
+    i=$(($i+1))
+done
 
 
 # If no patch has been generated all is ok, clean up the file stub and exit
